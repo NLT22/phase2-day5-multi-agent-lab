@@ -39,8 +39,8 @@ def render_markdown_report(
     # --- Summary table ---
     lines += [
         "## Metrics Summary\n",
-        "| Run | Latency (s) | Cost (USD) | Quality /10 | Words | Tokens in/out | Citations | Critic | Issues |",
-        "|---|---:|---:|---:|---:|---:|---:|:---:|---:|",
+        "| Run | Latency (s) | Cost (USD) | Quality /10 | Words | Tokens in/out | Citations | Critic | Status | Rewrites | Issues |",
+        "|---|---:|---:|---:|---:|---:|---:|:---:|:---:|---:|---:|",
     ]
     for m in metrics:
         cost = "—" if m.estimated_cost_usd is None else f"${m.estimated_cost_usd:.5f}"
@@ -52,6 +52,8 @@ def render_markdown_report(
         unsupported = _ex(m.notes, "unsupported_claims")
         cit_err = _ex(m.notes, "citation_errors")
         hall = _ex(m.notes, "hallucination_risks")
+        status = _ex(m.notes, "final_status")
+        rewrites = _ex(m.notes, "rewrite_count")
         try:
             issues = int(unsupported) + int(cit_err) + int(hall)
         except ValueError:
@@ -59,7 +61,7 @@ def render_markdown_report(
         lines.append(
             f"| {m.run_name} | {m.latency_seconds:.2f} | {cost} | {quality}"
             f" | {_ex(m.notes, 'words')} | {tokens}"
-            f" | {_ex(m.notes, 'citations')} | {verdict} | {issues} |"
+            f" | {_ex(m.notes, 'citations')} | {verdict} | {status} | {rewrites} | {issues} |"
         )
 
     # --- Quality breakdown ---

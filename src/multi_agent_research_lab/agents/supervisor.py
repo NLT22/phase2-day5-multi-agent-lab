@@ -61,6 +61,20 @@ def _critic_verdict(state: ResearchState) -> str | None:
     return state.agent_results[last_critic_idx].metadata.get("verdict")
 
 
+def _done_status(state: ResearchState, reason: str) -> str:
+    """Return a precise terminal status for benchmark/report consumers."""
+    verdict = _critic_verdict(state)
+    if "max_iterations" in reason:
+        return "max_iterations"
+    if verdict == "pass":
+        return "passed"
+    if verdict == "warn":
+        return "warned"
+    if verdict == "fail":
+        return "failed"
+    return "incomplete"
+
+
 def _llm_route(state: ResearchState) -> dict:
     """Ask LLM to decide the next route. Returns {"next": ..., "reason": ...}."""
     from multi_agent_research_lab.services.llm_client import LLMClient
@@ -96,6 +110,12 @@ def _fallback_route(state: ResearchState) -> dict:
     if verdict is None:
         return {"next": "critic", "reason": "final_answer ready, critic has not run"}
     if verdict == "fail":
+        settings = get_settings()
+        if state.rewrite_count >= settings.max_rewrites:
+            return {
+                "next": "done",
+                "reason": f"critic verdict=fail, max_rewrites={settings.max_rewrites} reached",
+            }
         return {"next": "writer", "reason": "critic verdict=fail, rewrite needed"}
     return {"next": "done", "reason": f"critic verdict={verdict}, all outputs complete"}
 
@@ -122,6 +142,7 @@ class SupervisorAgent(BaseAgent):
             # Hard guard: never exceed max_iterations
             if state.iteration >= settings.max_iterations:
                 decision = {"next": "done", "reason": "max_iterations reached"}
+                state.final_status = "max_iterations"
                 logger.warning("Supervisor: max_iterations=%d reached, forcing done", settings.max_iterations)
             else:
                 try:
@@ -140,11 +161,30 @@ class SupervisorAgent(BaseAgent):
 
             # Hard guard: Critic MUST run if final_answer exists but critic hasn't run yet.
             # This prevents LLM from skipping critic by returning "done" prematurely.
-            if decision["next"] == "done" and state.final_answer and _critic_verdict(state) is None:
+            if (
+                decision["next"] == "done"
+                and state.final_answer
+                and _critic_verdict(state) is None
+                and state.final_status != "max_iterations"
+            ):
                 decision = {"next": "critic", "reason": "hard-guard: critic must run before done"}
                 logger.warning("Supervisor: overriding LLM 'done' -> 'critic' (critic has not run yet)")
 
             route = decision["next"]
+            verdict = _critic_verdict(state)
+            if route == "writer" and verdict == "fail":
+                if state.rewrite_count >= settings.max_rewrites:
+                    route = "done"
+                    decision = {
+                        "next": "done",
+                        "reason": f"critic verdict=fail, max_rewrites={settings.max_rewrites} reached",
+                    }
+                    logger.warning("Supervisor: max_rewrites reached, stopping with failed status")
+                else:
+                    state.rewrite_count += 1
+            if route == "done":
+                state.final_status = _done_status(state, decision.get("reason", ""))
+
             state.record_route(route)
             state.agent_results.append(
                 AgentResult(

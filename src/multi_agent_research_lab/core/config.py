@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     lm_studio_model: str = Field(default="openai/gpt-oss-20b", validation_alias="LM_STUDIO_MODEL")
 
     max_iterations: int = Field(default=6, ge=1, le=20, validation_alias="MAX_ITERATIONS")
+    max_rewrites: int = Field(default=1, ge=0, le=5, validation_alias="MAX_REWRITES")
     timeout_seconds: int = Field(default=60, ge=5, le=600, validation_alias="TIMEOUT_SECONDS")
 
 

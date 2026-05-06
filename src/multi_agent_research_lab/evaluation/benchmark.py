@@ -192,7 +192,9 @@ def run_benchmark(
         f"critic_verdict={critic['verdict']} "
         f"unsupported_claims={critic['unsupported_claims']} "
         f"citation_errors={critic['citation_errors']} "
-        f"hallucination_risks={critic['hallucination_risks']}"
+        f"hallucination_risks={critic['hallucination_risks']} "
+        f"final_status={state.final_status or 'running'} "
+        f"rewrite_count={state.rewrite_count}"
     )
 
     metrics = BenchmarkMetrics(

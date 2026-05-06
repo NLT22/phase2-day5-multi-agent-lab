@@ -60,6 +60,7 @@ LANGSMITH_PROJECT=multi-agent-research-lab
 
 # Runtime
 MAX_ITERATIONS=6
+MAX_REWRITES=1
 TIMEOUT_SECONDS=60
 ```
 
@@ -97,6 +98,7 @@ Ngoai ra bao cao gom: `latency_seconds`, `cost_usd`, `tokens_in/out`, `critic_ve
 | Guard | Co che |
 |---|---|
 | Max iterations | `MAX_ITERATIONS=6`, Supervisor force "done" khi vuot |
+| Max rewrites | `MAX_REWRITES=1`, critic fail qua so lan rewrite thi stop voi `final_status=failed` |
 | LLM timeout | `TIMEOUT_SECONDS=60`, moi LLM call chay trong ThreadPoolExecutor |
 | LLM retry | tenacity retry x3, wait exponential 1-10s |
 | Critic bat buoc | Hard-guard trong Supervisor: khong the "done" neu Critic chua chay |
@@ -110,12 +112,14 @@ Ngoai ra bao cao gom: `latency_seconds`, `cost_usd`, `tokens_in/out`, `critic_ve
 python -m pytest tests/ -v
 ```
 
-11 tests cover: Supervisor routing, Critic hard-guard, max_iterations, benchmark scoring, critic metrics.
+13 tests cover: Supervisor routing, Critic hard-guard, max_iterations, max_rewrites, benchmark scoring, critic metrics.
 
 ## Output
 
 - `logs/trace_YYYYMMDD_HHMMSS.jsonl` -- span log moi agent voi input/output
-- `reports/benchmark_*.md` -- markdown report voi quality breakdown va averages
+- `reports/benchmark_baseline.md` -- single-agent report
+- `reports/benchmark_multi_agent.md` -- multi-agent report
+- `reports/benchmark_full.md` -- combined benchmark report, overwritten on each run
 
 ## References
 

@@ -1,13 +1,23 @@
 """Tests for SupervisorAgent routing and pipeline guarantees."""
 
+from unittest.mock import patch
+
 from multi_agent_research_lab.agents import SupervisorAgent
 from multi_agent_research_lab.core.schemas import AgentName, AgentResult, ResearchQuery
 from multi_agent_research_lab.core.state import ResearchState
 
 
+def _run_supervisor_with_fallback(state: ResearchState) -> ResearchState:
+    with patch(
+        "multi_agent_research_lab.agents.supervisor._llm_route",
+        side_effect=RuntimeError("force fallback"),
+    ):
+        return SupervisorAgent().run(state)
+
+
 def test_supervisor_routes_to_researcher_when_no_notes() -> None:
     state = ResearchState(request=ResearchQuery(query="Explain multi-agent systems"))
-    result = SupervisorAgent().run(state)
+    result = _run_supervisor_with_fallback(state)
     assert len(result.route_history) == 1
     assert result.route_history[0] in {"researcher", "analyst", "writer", "done", "critic"}
 
@@ -20,14 +30,12 @@ def test_supervisor_routes_to_critic_before_done() -> None:
         analysis_notes="Some analysis",
         final_answer="Some answer",
     )
-    result = SupervisorAgent().run(state)
+    result = _run_supervisor_with_fallback(state)
     assert result.route_history[-1] == "critic"
 
 
 def test_supervisor_hard_guard_overrides_llm_done() -> None:
     """Hard guard: if LLM returns 'done' but critic hasn't run, must override to 'critic'."""
-    from unittest.mock import patch
-
     state = ResearchState(
         request=ResearchQuery(query="Explain multi-agent systems"),
         research_notes="notes",
@@ -50,7 +58,7 @@ def test_supervisor_routes_to_done_after_critic_pass() -> None:
         final_answer="answer",
         agent_results=[AgentResult(agent=AgentName.CRITIC, content="{}", metadata={"verdict": "pass"})],
     )
-    result = SupervisorAgent().run(state)
+    result = _run_supervisor_with_fallback(state)
     assert result.route_history[-1] == "done"
 
 
@@ -62,7 +70,7 @@ def test_supervisor_routes_to_writer_after_critic_fail() -> None:
         final_answer="answer",
         agent_results=[AgentResult(agent=AgentName.CRITIC, content="{}", metadata={"verdict": "fail"})],
     )
-    result = SupervisorAgent().run(state)
+    result = _run_supervisor_with_fallback(state)
     assert result.route_history[-1] == "writer"
 
 
@@ -70,6 +78,7 @@ def test_supervisor_routes_to_critic_again_after_rewrite() -> None:
     """After writer rewrites (runs after critic), supervisor must route to critic again."""
     state = ResearchState(
         request=ResearchQuery(query="Explain multi-agent systems"),
+        rewrite_count=1,
         research_notes="notes",
         analysis_notes="analysis",
         final_answer="rewritten answer",
@@ -78,9 +87,30 @@ def test_supervisor_routes_to_critic_again_after_rewrite() -> None:
             AgentResult(agent=AgentName.WRITER, content="rewritten answer", metadata={}),
         ],
     )
-    result = SupervisorAgent().run(state)
+    result = _run_supervisor_with_fallback(state)
     # Critic must run again on the new answer, not loop back to writer
     assert result.route_history[-1] == "critic"
+
+
+def test_supervisor_stops_failed_after_max_rewrites() -> None:
+    """If critic still fails after allowed rewrites, mark final status as failed."""
+    from multi_agent_research_lab.core.config import get_settings
+
+    settings = get_settings()
+    state = ResearchState(
+        request=ResearchQuery(query="Explain multi-agent systems"),
+        rewrite_count=settings.max_rewrites,
+        research_notes="notes",
+        analysis_notes="analysis",
+        final_answer="answer",
+        agent_results=[
+            AgentResult(agent=AgentName.WRITER, content="answer", metadata={}),
+            AgentResult(agent=AgentName.CRITIC, content="{}", metadata={"verdict": "fail"}),
+        ],
+    )
+    result = _run_supervisor_with_fallback(state)
+    assert result.route_history[-1] == "done"
+    assert result.final_status == "failed"
 
 
 def test_supervisor_enforces_max_iterations() -> None:
@@ -90,8 +120,9 @@ def test_supervisor_enforces_max_iterations() -> None:
         request=ResearchQuery(query="Explain multi-agent systems"),
         iteration=settings.max_iterations,
     )
-    result = SupervisorAgent().run(state)
+    result = _run_supervisor_with_fallback(state)
     assert result.route_history[-1] == "done"
+    assert result.final_status == "max_iterations"
 
 
 def test_benchmark_quality_score_not_always_10() -> None:
@@ -138,6 +169,8 @@ def test_critic_metrics_in_benchmark() -> None:
 
     state_with_critic = ResearchState(
         request=ResearchQuery(query="test query"),
+        final_status="warned",
+        rewrite_count=1,
         agent_results=[
             AgentResult(
                 agent=AgentName.CRITIC,

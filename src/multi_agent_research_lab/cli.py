@@ -213,14 +213,12 @@ def benchmark(
             except Exception as e:
                 console.print(f"  [red]✗[/red] {run_name} FAILED: {e}")
 
-    from datetime import datetime as dt
-    timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
     report_md = render_markdown_report(
         all_metrics, states=all_states,
         baseline_metrics=baseline_metrics,
         multi_metrics=multi_metrics,
     )
-    path = store.write_text(f"benchmark_full_{timestamp}.md", report_md)
+    path = store.write_text("benchmark_full.md", report_md)
 
     console.rule("[bold]Results[/]")
     _print_metrics_table(all_metrics)
