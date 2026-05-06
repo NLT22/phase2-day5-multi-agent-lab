@@ -25,6 +25,9 @@ class Settings(BaseSettings):
 
     tavily_api_key: str | None = Field(default=None, validation_alias="TAVILY_API_KEY")
 
+    lm_studio_base_url: str = Field(default="http://localhost:1234/v1", validation_alias="LM_STUDIO_BASE_URL")
+    lm_studio_model: str = Field(default="openai/gpt-oss-20b", validation_alias="LM_STUDIO_MODEL")
+
     max_iterations: int = Field(default=6, ge=1, le=20, validation_alias="MAX_ITERATIONS")
     timeout_seconds: int = Field(default=60, ge=5, le=600, validation_alias="TIMEOUT_SECONDS")
 

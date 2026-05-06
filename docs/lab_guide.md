@@ -15,63 +15,74 @@ Bạn cần xây dựng một research assistant có thể nhận câu hỏi dà
 - Phải có trace hoặc log cho từng bước.
 - Phải benchmark, không chỉ nhìn output bằng cảm tính.
 
-## Milestone 1: Baseline
+## Milestone 1: Baseline ✅
 
-File gợi ý:
+**Đã implement:** `services/llm_client.py`, `services/search_client.py`, `cli.py`
 
-- `src/multi_agent_research_lab/cli.py`
-- `src/multi_agent_research_lab/services/llm_client.py`
+- LLMClient: auto-detect LM Studio local → OpenAI cloud → RuntimeError
+- SearchClient: Tavily nếu có key, mock data nếu không
+- CLI `baseline` command: single LLM call với trace + benchmark metrics
 
-TODO(student): thay baseline placeholder bằng một call LLM thật.
+Chạy thử:
+```bash
+python -m multi_agent_research_lab.cli baseline --query "Research GraphRAG"
+```
 
-## Milestone 2: Supervisor
+## Milestone 2: Supervisor ✅
 
-File gợi ý:
+**Đã implement:** `agents/supervisor.py`, `graph/workflow.py`
 
-- `src/multi_agent_research_lab/agents/supervisor.py`
-- `src/multi_agent_research_lab/graph/workflow.py`
+Routing policy:
+- Ưu tiên: LM Studio → OpenAI → if/else fallback
+- LLM trả JSON `{"next": "researcher|analyst|writer|done", "reason": "..."}`
+- Guard cứng: `iteration >= max_iterations` → force "done"
 
-TODO(student): implement routing policy.
+LangGraph graph:
+```
+Supervisor ──conditional──► researcher/analyst/writer/done
+worker ──────────────────► Supervisor (loop back)
+```
 
-Gợi ý câu hỏi thiết kế:
+## Milestone 3: Worker agents ✅
 
-- Khi nào gọi Researcher?
-- Khi nào gọi Analyst?
-- Khi nào gọi Writer?
-- Khi nào stop?
-- Nếu agent fail thì retry hay fallback?
+**Đã implement:** `agents/researcher.py`, `agents/analyst.py`, `agents/writer.py`, `agents/critic.py`
 
-## Milestone 3: Worker agents
+- **Researcher**: search → LLM summarize → `research_notes`
+- **Analyst**: LLM extract key claims, viewpoints, weak evidence → `analysis_notes`
+- **Writer**: LLM synthesize ~500 từ với citations → `final_answer`
+- **Critic** (bonus): LLM fact-check citations, phát hiện hallucination → verdict pass/warn/fail
 
-File gợi ý:
+## Milestone 4: Trace và benchmark ✅
 
-- `agents/researcher.py`
-- `agents/analyst.py`
-- `agents/writer.py`
+**Đã implement:** `observability/tracing.py`, `evaluation/benchmark.py`, `evaluation/report.py`
 
-TODO(student): implement từng worker.
+- `trace_span()` ghi JSONL vào `logs/trace_*.jsonl` với input/output mỗi agent
+- LangSmith: đặt `LANGSMITH_TRACING=true` + `LANGSMITH_API_KEY` trong `.env`
+- Tên trace phân biệt: `"baseline: <query[:50]>"`, `"multi_agent: <query[:50]>"`
 
-## Milestone 4: Trace và benchmark
+Quality score 5 chiều (mỗi max 2 điểm, tổng 10):
 
-File gợi ý:
-
-- `observability/tracing.py`
-- `evaluation/benchmark.py`
-- `evaluation/report.py`
-
-Benchmark tối thiểu:
-
-| Metric | Cách đo gợi ý |
+| Dimension | Đo gì |
 |---|---|
-| Latency | wall-clock time |
-| Cost | token usage hoặc provider usage |
-| Quality | rubric 0-10 do peer review |
-| Citation coverage | số claims có source / tổng claims chính |
-| Failure rate | số query fail / tổng query |
+| Length | 380–700 từ = full score, penalty nếu quá ngắn/dài |
+| Structure | Có header, bullet list, Key Takeaways |
+| Citations | Số source được cite `[1]`, `[2]`... / tổng source |
+| Relevance | Keyword query có xuất hiện trong answer |
+| Completeness | Pipeline có đủ research_notes, analysis_notes, final_answer |
+
+Chạy benchmark đầy đủ (7 queries, cả 2 mode):
+```bash
+python -m multi_agent_research_lab.cli benchmark --mode both
+```
+
+Report lưu tại `reports/benchmark_full_YYYYMMDD_HHMMSS.md` với bảng averages baseline vs multi-agent.
 
 ## Exit ticket
 
 Mỗi nhóm trả lời 2 câu:
 
-1. Case nào nên dùng multi-agent? Vì sao?
-2. Case nào không nên dùng multi-agent? Vì sao?
+1. **Case nào nên dùng multi-agent?**
+   Khi task có nhiều bước chuyên biệt, cần temperature/prompt khác nhau, hoặc cần retry từng bước độc lập. Ví dụ: research → analysis → writing là 3 "mode" tư duy khác nhau.
+
+2. **Case nào không nên dùng multi-agent?**
+   Khi task đơn giản, latency quan trọng hơn quality, hoặc context đủ nhỏ để 1 LLM call xử lý tốt. Multi-agent tốn gấp 3-5× token và latency so với baseline.

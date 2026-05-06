@@ -1,13 +1,14 @@
-.venv/
+venv/
 __pycache__/
 *.pyc
 .env
+logs/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 dist/
 build/
 *.egg-info/
-reports/*.json
-reports/*.md
+# reports/*.json
+# reports/*.md
 !.gitkeep
