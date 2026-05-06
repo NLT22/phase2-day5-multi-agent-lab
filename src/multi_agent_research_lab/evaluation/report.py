@@ -17,7 +17,12 @@ def _ex(notes: str, key: str, default: str = "—") -> str:
 
 def _avg(lst: list[BenchmarkMetrics], attr: str) -> str:
     vals = [getattr(m, attr) for m in lst if getattr(m, attr) is not None]
-    return f"{sum(vals)/len(vals):.3f}" if vals else "—"
+    if not vals:
+        return "—"
+    mean = sum(vals) / len(vals)
+    # cost_usd needs more precision than latency/quality
+    fmt = ".6f" if attr == "estimated_cost_usd" else ".2f"
+    return f"{mean:{fmt}}"
 
 
 def render_markdown_report(
@@ -34,8 +39,8 @@ def render_markdown_report(
     # --- Summary table ---
     lines += [
         "## Metrics Summary\n",
-        "| Run | Latency (s) | Cost (USD) | Quality /10 | Words | Tokens in/out | Citations | Errors |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| Run | Latency (s) | Cost (USD) | Quality /10 | Words | Tokens in/out | Citations | Critic | Issues |",
+        "|---|---:|---:|---:|---:|---:|---:|:---:|---:|",
     ]
     for m in metrics:
         cost = "—" if m.estimated_cost_usd is None else f"${m.estimated_cost_usd:.5f}"
@@ -43,10 +48,18 @@ def render_markdown_report(
         tok_in = _ex(m.notes, "tokens_in")
         tok_out = _ex(m.notes, "tokens_out")
         tokens = f"{tok_in}/{tok_out}" if tok_in != "—" else "—"
+        verdict = _ex(m.notes, "critic_verdict")
+        unsupported = _ex(m.notes, "unsupported_claims")
+        cit_err = _ex(m.notes, "citation_errors")
+        hall = _ex(m.notes, "hallucination_risks")
+        try:
+            issues = int(unsupported) + int(cit_err) + int(hall)
+        except ValueError:
+            issues = "—"
         lines.append(
             f"| {m.run_name} | {m.latency_seconds:.2f} | {cost} | {quality}"
             f" | {_ex(m.notes, 'words')} | {tokens}"
-            f" | {_ex(m.notes, 'citations')} | {_ex(m.notes, 'errors')} |"
+            f" | {_ex(m.notes, 'citations')} | {verdict} | {issues} |"
         )
 
     # --- Quality breakdown ---

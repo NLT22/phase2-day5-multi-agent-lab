@@ -80,6 +80,17 @@ def _make_baseline_runner(run_label: str):
                 resp = llm.complete(system, f"Query: {q}\n\nSources:\n{sources_text}")
                 state.final_answer = resp.content
                 state.research_notes = resp.content
+                # Record to agent_results so benchmark._total_cost() picks up cost
+                from multi_agent_research_lab.core.schemas import AgentName, AgentResult
+                state.agent_results.append(AgentResult(
+                    agent=AgentName.WRITER,
+                    content=resp.content,
+                    metadata={
+                        "input_tokens": resp.input_tokens,
+                        "output_tokens": resp.output_tokens,
+                        "cost_usd": resp.cost_usd,
+                    },
+                ))
                 span["output"] = {
                     "word_count": len(resp.content.split()),
                     "answer_preview": resp.content[:120].replace("\n", " "),
@@ -249,7 +260,11 @@ def _print_averages(
 
     def avg(lst: list[BenchmarkMetrics], attr: str) -> str:
         vals = [getattr(m, attr) for m in lst if getattr(m, attr) is not None]
-        return f"{sum(vals)/len(vals):.2f}" if vals else "—"
+        if not vals:
+            return "—"
+        mean = sum(vals) / len(vals)
+        fmt = ".6f" if attr == "estimated_cost_usd" else ".2f"
+        return f"{mean:{fmt}}"
 
     table = Table(title="Averages: Baseline vs Multi-Agent", show_header=True)
     table.add_column("Metric")

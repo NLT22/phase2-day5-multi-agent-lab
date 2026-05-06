@@ -122,6 +122,30 @@ def _error_rate(state: ResearchState) -> float:
     return round(len(state.errors) / denom, 2)
 
 
+def _critic_summary(state: ResearchState) -> dict:
+    """Extract critic verdict from the FINAL critic run (after the last writer run)."""
+    last_critic_idx: int | None = None
+    last_writer_idx: int | None = None
+    for i, r in enumerate(state.agent_results):
+        if r.agent == "critic":
+            last_critic_idx = i
+        if r.agent == "writer":
+            last_writer_idx = i
+
+    if last_critic_idx is None:
+        return {"verdict": "not_run", "unsupported_claims": 0, "citation_errors": 0, "hallucination_risks": 0}
+    if last_writer_idx is not None and last_writer_idx > last_critic_idx:
+        return {"verdict": "stale", "unsupported_claims": 0, "citation_errors": 0, "hallucination_risks": 0}
+
+    r = state.agent_results[last_critic_idx]
+    return {
+        "verdict": r.metadata.get("verdict", "n/a"),
+        "unsupported_claims": r.metadata.get("unsupported_claims", 0),
+        "citation_errors": r.metadata.get("citation_errors", 0),
+        "hallucination_risks": r.metadata.get("hallucination_risks", 0),
+    }
+
+
 def _token_summary(state: ResearchState) -> dict[str, int]:
     total_in = total_out = 0
     for r in state.agent_results:
@@ -151,6 +175,7 @@ def run_benchmark(
     errors = _error_rate(state)
     tokens = _token_summary(state)
     words = len((state.final_answer or "").split())
+    critic = _critic_summary(state)
 
     notes = (
         f"run_mode={run_mode} "
@@ -163,7 +188,11 @@ def run_benchmark(
         f"q_structure={breakdown['structure']} "
         f"q_citations={breakdown['citations']} "
         f"q_relevance={breakdown['relevance']} "
-        f"q_completeness={breakdown['completeness']}"
+        f"q_completeness={breakdown['completeness']} "
+        f"critic_verdict={critic['verdict']} "
+        f"unsupported_claims={critic['unsupported_claims']} "
+        f"citation_errors={critic['citation_errors']} "
+        f"hallucination_risks={critic['hallucination_risks']}"
     )
 
     metrics = BenchmarkMetrics(

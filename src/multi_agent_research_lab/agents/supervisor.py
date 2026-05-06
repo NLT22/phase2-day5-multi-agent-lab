@@ -40,11 +40,25 @@ Respond ONLY with a JSON object in this exact format (no markdown, no explanatio
 
 
 def _critic_verdict(state: ResearchState) -> str | None:
-    """Return critic's last verdict if it has run, else None."""
-    for r in reversed(state.agent_results):
+    """Return critic's verdict only if it ran AFTER the most recent writer run.
+
+    If writer has rewritten since the last critic run, treat critic as not-yet-run
+    so Supervisor routes to critic again on the new answer.
+    """
+    last_critic_idx: int | None = None
+    last_writer_idx: int | None = None
+    for i, r in enumerate(state.agent_results):
         if r.agent == "critic":
-            return r.metadata.get("verdict")
-    return None
+            last_critic_idx = i
+        if r.agent == "writer":
+            last_writer_idx = i
+
+    if last_critic_idx is None:
+        return None
+    # Critic result is stale if writer ran after it
+    if last_writer_idx is not None and last_writer_idx > last_critic_idx:
+        return None
+    return state.agent_results[last_critic_idx].metadata.get("verdict")
 
 
 def _llm_route(state: ResearchState) -> dict:
@@ -113,16 +127,22 @@ class SupervisorAgent(BaseAgent):
                 try:
                     decision = _llm_route(state)
                     logger.info(
-                        "Supervisor [LLM]: iteration=%d → %s (%s)",
+                        "Supervisor [LLM]: iteration=%d -> %s (%s)",
                         state.iteration, decision["next"], decision["reason"],
                     )
                 except Exception as e:
                     logger.warning("Supervisor: LLM routing failed (%s), falling back to if/else", e)
                     decision = _fallback_route(state)
                     logger.info(
-                        "Supervisor [fallback]: iteration=%d → %s (%s)",
+                        "Supervisor [fallback]: iteration=%d -> %s (%s)",
                         state.iteration, decision["next"], decision["reason"],
                     )
+
+            # Hard guard: Critic MUST run if final_answer exists but critic hasn't run yet.
+            # This prevents LLM from skipping critic by returning "done" prematurely.
+            if decision["next"] == "done" and state.final_answer and _critic_verdict(state) is None:
+                decision = {"next": "critic", "reason": "hard-guard: critic must run before done"}
+                logger.warning("Supervisor: overriding LLM 'done' -> 'critic' (critic has not run yet)")
 
             route = decision["next"]
             state.record_route(route)
